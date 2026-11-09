@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Conecta las flores 🌼</title>
+<style>
+:root{color-scheme:dark;--bg1:#050a24;--bg2:#0f2160;--tx:#fff6d6;--mut:#a9b4e0;--gold:#ffd23f;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+*,*::before,*::after{box-sizing:inherit}
+html,body{margin:0;min-height:100%}
+body{background:radial-gradient(ellipse at top,var(--bg2),var(--bg1) 70%) fixed;color:var(--tx);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;display:flex;flex-direction:column;align-items:center;padding:16px;overflow-x:hidden}
+#stars{position:fixed;inset:0;pointer-events:none;z-index:0}
+.st{position:absolute;border-radius:50%;background:#fff;animation:tw 3s infinite ease-in-out}
+@keyframes tw{0%,100%{opacity:.2}50%{opacity:1}}
+main{position:relative;z-index:1;width:100%;max-width:480px;display:flex;flex-direction:column;align-items:center;gap:12px}
+h1{margin:4px 0 0;font-size:1.6rem;color:var(--gold);text-align:center}
+.sub{margin:0;color:var(--mut);font-size:.9rem;text-align:center}
+.stats{display:flex;gap:8px;width:100%;justify-content:center}
+.pill{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:6px 14px;font-size:.85rem}
+.pill b{color:var(--gold)}
+canvas{touch-action:none;border-radius:18px;background:rgba(5,10,36,.55);border:1px solid rgba(255,255,255,.14);box-shadow:0 0 30px rgba(255,210,63,.12);max-width:100%}
+.btns{display:flex;gap:10px}
+button{font:inherit;color:var(--tx);background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);border-radius:999px;padding:10px 18px;cursor:pointer}
+button:active{transform:scale(.96)}
+button.main{background:var(--gold);color:#2a1d00;border-color:var(--gold);font-weight:700}
+.foot{color:var(--mut);font-size:.8rem;margin:4px 0 12px;text-align:center}
+#ov{position:fixed;inset:0;z-index:5;display:none;align-items:center;justify-content:center;background:rgba(5,10,36,.75);padding:20px}
+#ov.show{display:flex}
+.card{background:linear-gradient(160deg,#16286e,#0a1440);border:1px solid rgba(255,210,63,.5);border-radius:22px;padding:28px 24px;text-align:center;max-width:340px;animation:pop .4s ease}
+.card .big{font-size:3rem;animation:bob 1.4s infinite ease-in-out}
+.card h2{margin:6px 0;color:var(--gold)}
+.card p{margin:0 0 18px;color:var(--mut)}
+@keyframes pop{from{transform:scale(.7);opacity:0}to{transform:scale(1);opacity:1}}
+@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+</style>
+</head>
+<body>
+<div id="stars"></div>
+<main>
+  <h1>🌼 Conecta las flores 🌼</h1>
+  <p class="sub">Une cada par de flores del mismo color y llena todo el tablero. Arrastra con el dedo.</p>
+  <div class="stats">
+    <div class="pill">Nivel <b id="lv">1</b></div>
+    <div class="pill">Unidas <b id="cn">0/0</b></div>
+    <div class="pill">Lleno <b id="fl">0%</b></div>
+  </div>
+  <canvas id="cv"></canvas>
+  <div class="btns">
+    <button id="rs">↺ Reiniciar</button>
+    <button id="nw">🎲 Otro tablero</button>
+  </div>
+  <p class="foot">Hecho por tu ingeniero que te quiere 💛</p>
+</main>
+<div id="ov"><div class="card"><div class="big">🌼</div><h2 id="ot">¡Lo lograste!</h2><p id="om">Nivel superado</p><button class="main" id="nx">Siguiente nivel →</button></div></div>
+
+<script>
+(function(){
+  var COLORS=['#ffd23f','#ff6fb5','#35d0ff','#ff8a3d','#7dff8a','#b388ff'];
+  var SIZES=[4,5,5,6,6,7];
+  var cv=document.getElementById('cv'),ctx=cv.getContext('2d');
+  var n,k,N,dots,paths,occ,cur=-1,level=1,done=false,S=300,cs=75,DPR=window.devicePixelRatio||1,lastP=null;
+
+  try{var sv=parseInt(localStorage.getItem('flores-nivel'),10);if(sv>0)level=sv;}catch(e){}
+
+  // estrellas
+  var st=document.getElementById('stars');
+  for(var i=0;i<70;i++){var d=document.createElement('div');d.className='st';var z=Math.random()*2+1;
+    d.style.cssText='left:'+Math.random()*100+'%;top:'+Math.random()*100+'%;width:'+z+'px;height:'+z+'px;animation-delay:'+Math.random()*3+'s';st.appendChild(d);}
+
+  function nb(i){var r=Math.floor(i/n),c=i%n,o=[];if(r>0)o.push(i-n);if(r<n-1)o.push(i+n);if(c>0)o.push(i-1);if(c<n-1)o.push(i+1);return o;}
+
+  function genPath(){
+    var T=n*n;
+    for(var a=0;a<300;a++){
+      var start=Math.floor(Math.random()*T),vis=new Array(T).fill(false),path=[start],steps=0;
+      vis[start]=true;
+      var go=function(i){
+        if(path.length===T)return true;
+        if(++steps>30000)return false;
+        var cand=nb(i).filter(function(x){return !vis[x];}).map(function(x){
+          var dg=nb(x).filter(function(y){return !vis[y];}).length;return [dg+Math.random()*0.9,x];
+        }).sort(function(p,q){return p[0]-q[0];});
+        for(var j=0;j<cand.length;j++){
+          var x=cand[j][1];vis[x]=true;path.push(x);
+          if(go(x))return true;
+          if(steps>30000)return false;
+          vis[x]=false;path.pop();
+        }
+        return false;
+      };
+      if(go(start))return path;
+    }
+    var p=[];for(var r=0;r<n;r++)for(var c=0;c<n;c++)p.push(r*n+(r%2?n-1-c:c));return p;
+  }
+
+  function newBoard(){
+    n=SIZES[Math.min(level-1,SIZES.length-1)];k=n-1;N=n*n;
+    var path=genPath(),len=[],i;
+    for(i=0;i<k;i++)len.push(3);
+    var rem=N-3*k;while(rem-->0)len[Math.floor(Math.random()*k)]++;
+    var cols=COLORS.slice(0,k).sort(function(){return Math.random()-.5;});
+    dots={};var pos=0;
+    for(i=0;i<k;i++){dots[path[pos]]=i;dots[path[pos+len[i]-1]]=i;pos+=len[i];}
+    // dots[cell]=colorIndex ; colores
+    newBoard.cols=cols;
+    reset();
+  }
+  function reset(){
+    paths=[];for(var i=0;i<k;i++)paths.push([]);
+    cur=-1;done=false;rebuild();resize();update();
+  }
+  function rebuild(){occ=new Array(N).fill(-1);paths.forEach(function(p,i){p.forEach(function(c){occ[c]=i;});});}
+  function complete(i){var p=paths[i];return p.length>1&&dots[p[0]]===i&&dots[p[p.length-1]]===i&&p[0]!==p[p.length-1];}
+
+  function resize(){
+    S=Math.max(240,Math.min(window.innerWidth-32,460,window.innerHeight-330));
+    cs=S/n;cv.style.width=S+'px';cv.style.height=S+'px';cv.width=S*DPR;cv.height=S*DPR;draw();
+  }
+  window.addEventListener('resize',resize);
+
+  function rr(x,y,w,h,r){ctx.beginPath();if(ctx.roundRect)ctx.roundRect(x,y,w,h,r);else ctx.rect(x,y,w,h);}
+  function flower(x,y,r,col){
+    ctx.save();ctx.shadowColor=col;ctx.shadowBlur=12;ctx.fillStyle=col;
+    for(var i=0;i<6;i++){var a=i*Math.PI/3;ctx.beginPath();ctx.arc(x+Math.cos(a)*r*.55,y+Math.sin(a)*r*.55,r*.45,0,7);ctx.fill();}
+    ctx.shadowBlur=0;ctx.fillStyle='#fffbe6';ctx.beginPath();ctx.arc(x,y,r*.38,0,7);ctx.fill();ctx.restore();
+  }
+  function xy(c){return [(c%n+.5)*cs,(Math.floor(c/n)+.5)*cs];}
+
+  function draw(){
+    ctx.setTransform(DPR,0,0,DPR,0,0);ctx.clearRect(0,0,S,S);
+    var cols=newBoard.cols,i,c;
+    for(c=0;c<N;c++){
+      var x=(c%n)*cs,y=Math.floor(c/n)*cs;
+      ctx.fillStyle=occ[c]>=0?cols[occ[c]]+'30':'rgba(255,255,255,.05)';
+      rr(x+2,y+2,cs-4,cs-4,8);ctx.fill();
+    }
+    ctx.lineCap='round';ctx.lineJoin='round';
+    for(i=0;i<k;i++){
+      var p=paths[i];if(p.length<2)continue;
+      ctx.save();ctx.strokeStyle=cols[i];ctx.lineWidth=cs*.3;ctx.shadowColor=cols[i];ctx.shadowBlur=complete(i)?14:6;
+      ctx.beginPath();p.forEach(function(q,j){var a=xy(q);if(j)ctx.lineTo(a[0],a[1]);else ctx.moveTo(a[0],a[1]);});
+      ctx.stroke();ctx.restore();
+    }
+    for(c in dots){var a=xy(+c);flower(a[0],a[1],cs*.3,cols[dots[c]]);}
+  }
+
+  function update(){
+    var cn=0,i,f=0;for(i=0;i<k;i++)if(complete(i))cn++;
+    for(i=0;i<N;i++)if(occ[i]>=0)f++;
+    document.getElementById('lv').textContent=level;
+    document.getElementById('cn').textContent=cn+'/'+k;
+    document.getElementById('fl').textContent=Math.round(f/N*100)+'%';
+    return cn===k&&f===N;
+  }
+
+  function cellAt(fx,fy){var c=Math.floor(fx),r=Math.floor(fy);if(c<0||r<0||c>=n||r>=n)return -1;return r*n+c;}
+  function frac(e){var b=cv.getBoundingClientRect();return [(e.clientX-b.left)/b.width*n,(e.clientY-b.top)/b.height*n];}
+
+  function start(c){
+    if(dots[c]!==undefined){cur=dots[c];paths[cur]=[c];}
+    else if(occ[c]>=0){cur=occ[c];var p=paths[cur];p.length=p.indexOf(c)+1;}
+    else return;
+    rebuild();
+  }
+  function step(c){
+    var p=paths[cur],end=p[p.length-1];
+    if(c===end)return false;
+    var idx=p.indexOf(c);
+    if(idx>=0){p.length=idx+1;return true;}
+    if(complete(cur))return false;
+    if(nb(end).indexOf(c)<0)return false;
+    if(dots[c]!==undefined&&dots[c]!==cur)return false;
+    if(occ[c]>=0&&occ[c]!==cur){var o=paths[occ[c]];o.length=o.indexOf(c);}
+    p.push(c);return true;
+  }
+  function moveTo(c){
+    var p=paths[cur],end=p[p.length-1];
+    var dr=Math.floor(c/n)-Math.floor(end/n),dc=c%n-end%n,ok=false;
+    if(Math.abs(dr)===1&&Math.abs(dc)===1){
+      var m1=Math.floor(end/n)*n+c%n,m2=Math.floor(c/n)*n+end%n;
+      if(step(m1)){ok=true;step(c);}else if(step(m2)){ok=true;step(c);}
+    }else ok=step(c);
+    if(ok){rebuild();}
+    return ok;
+  }
+  function finish(){
+    if(update()&&!done){
+      done=true;
+      try{localStorage.setItem('flores-nivel',String(level+1));}catch(e){}
+      var msgs=['Ni una flor se quedó sin conectar 🌼','Qué buena eres para esto 💛','Cada flor encontró a su pareja ✨','¡Sigues sorprendiéndome! 🌻'];
+      document.getElementById('ot').textContent='¡Nivel '+level+' superado!';
+      document.getElementById('om').textContent=msgs[(level-1)%msgs.length];
+      setTimeout(function(){document.getElementById('ov').classList.add('show');},350);
+    }
+  }
+
+  cv.addEventListener('pointerdown',function(e){
+    if(done)return;e.preventDefault();cv.setPointerCapture(e.pointerId);
+    var f=frac(e),c=cellAt(f[0],f[1]);lastP=f;if(c<0)return;
+    start(c);draw();update();
+  });
+  cv.addEventListener('pointermove',function(e){
+    if(cur<0||done)return;e.preventDefault();
+    var f=frac(e),dx=f[0]-lastP[0],dy=f[1]-lastP[1],steps=Math.max(1,Math.ceil(Math.hypot(dx,dy)/.2));
+    for(var s=1;s<=steps;s++){
+      var c=cellAt(lastP[0]+dx*s/steps,lastP[1]+dy*s/steps);
+      if(c>=0)moveTo(c);
+    }
+    lastP=f;draw();update();
+  });
+  function up(){if(cur>=0){cur=-1;draw();finish();}}
+  cv.addEventListener('pointerup',up);cv.addEventListener('pointercancel',up);
+
+  document.getElementById('rs').onclick=reset;
+  document.getElementById('nw').onclick=newBoard;
+  document.getElementById('nx').onclick=function(){document.getElementById('ov').classList.remove('show');level++;newBoard();};
+
+  newBoard();
+})();
+</script>
+</body>
+</html>
